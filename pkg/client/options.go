@@ -23,10 +23,53 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-package main
+package client
 
-import "github.com/rapidloop/rtop/cmd"
+import "golang.org/x/crypto/ssh"
 
-func main() {
-	cmd.Execute()
+type option struct {
+	user      string
+	host      string
+	port      int
+	keypath   string
+	workers   int
+	sshClient *ssh.Client
+}
+
+type Option func(o *option)
+
+func WithUser(user string) Option {
+	return func(o *option) {
+		o.user = user
+	}
+}
+
+func WithHost(host string) Option {
+	return func(o *option) {
+		o.host = host
+	}
+}
+
+func WithPort(port int) Option {
+	return func(o *option) {
+		o.port = port
+	}
+}
+
+func WithKeyPath(keypath string) Option {
+	return func(o *option) {
+		o.keypath = keypath
+	}
+}
+
+func WithSSHClient(sshClient *ssh.Client) Option {
+	return func(o *option) {
+		o.sshClient = sshClient
+	}
+}
+
+func WithWorkers(workers int) Option {
+	return func(o *option) {
+		o.workers = workers
+	}
 }

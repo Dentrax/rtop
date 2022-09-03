@@ -23,15 +23,22 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-package main
+package ssh
 
 import (
 	"bufio"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
+	"github.com/mitchellh/go-homedir"
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type Section struct {
@@ -72,10 +79,41 @@ func (s *Section) getFull(name string, def Section) (host string, port int, user
 	return
 }
 
+// GetSshConfig returns the host, port, user and keyfile for the given host.
+func GetSshConfig(flagHost, flagKeyPath string) (host string, port int, username string, keyPath string, error error) {
+	home, err := homedir.Dir()
+	if err != nil {
+		error = err
+		return
+	}
+
+	// fill from ~/.ssh/config if possible
+	sshConfig := filepath.Join(home, ".ssh", "config")
+	if _, err := os.Stat(sshConfig); err == nil {
+		if ParseSshConfig(sshConfig) {
+			var keyfile string
+			host, port, username, keyfile = GetSshEntry(flagHost)
+
+			if len(keyfile) > 0 && len(flagKeyPath) == 0 {
+				keyPath = keyfile
+			}
+		}
+	}
+
+	// if keyPath is still empty, try fallback to ~/.ssh/config.
+	if len(flagKeyPath) == 0 {
+		idrsap := filepath.Join(home, ".ssh", "id_rsa")
+		if _, err := os.Stat(idrsap); err == nil {
+			keyPath = idrsap
+		}
+	}
+
+	return
+}
+
 var HostInfo = make(map[string]Section)
 
-func getSshEntry(name string) (host string, port int, user, keyfile string) {
-
+func GetSshEntry(name string) (host string, port int, user, keyfile string) {
 	def := Section{Hostname: name}
 	if defcfg, ok := HostInfo["*"]; ok {
 		def = defcfg
@@ -92,7 +130,7 @@ func getSshEntry(name string) (host string, port int, user, keyfile string) {
 	return def.Hostname, def.Port, def.User, def.IdentityFile
 }
 
-func parseSshConfig(path string) bool {
+func ParseSshConfig(path string) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		log.Printf("warning: %v", err)
@@ -146,4 +184,19 @@ func parseSshConfig(path string) bool {
 		}
 	}
 	return true
+}
+
+// ParsePemBlock parses given PEM block.
+// ref golang.org/x/crypto/ssh/keys.go#ParseRawPrivateKey.
+func ParsePemBlock(block *pem.Block) (interface{}, error) {
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "EC PRIVATE KEY":
+		return x509.ParseECPrivateKey(block.Bytes)
+	case "DSA PRIVATE KEY":
+		return ssh.ParseDSAPrivateKey(block.Bytes)
+	default:
+		return nil, fmt.Errorf("rtop: unsupported key type %q", block.Type)
+	}
 }
